@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /
+
+# Disallow access to API routes
+Disallow: /api/
+
+
+# Allow access to static assets
+Allow: /*.css$
+Allow: /*.js$
+
+# Disallow access to any files starting with a dot
+Disallow: /.*
+
+# Sitemap (uncomment and update if you have a sitemap)
+# Sitemap: https://yourdomain.com/sitemap.xml

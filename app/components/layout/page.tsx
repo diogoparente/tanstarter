@@ -12,7 +12,7 @@ type PageProps = {
 function Page({
   children,
   withHeader = true,
-  withFooter = true,
+  withFooter = false,
 }: PropsWithChildren<PageProps>) {
   return (
     <div className="flex min-h-screen min-w-full flex-col transition-all duration-700">

@@ -16,7 +16,30 @@ import { useMutation } from "@tanstack/react-query";
 import { User, Mail, Lock } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
-export function RegisterForm() {
+const SocialSignUp = () => {
+  return (
+    <form method="GET" className="flex items-center gap-4">
+      <Button
+        formAction="/api/auth/github"
+        className="flex-1"
+        type="submit"
+        variant="outline"
+      >
+        Sign up with GitHub
+      </Button>
+      <Button
+        formAction="/api/auth/google"
+        className="flex-1"
+        type="submit"
+        variant="outline"
+      >
+        Sign up with Google
+      </Button>
+    </form>
+  );
+};
+
+function CredentialSignUp() {
   const navigate = useNavigate();
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
@@ -32,7 +55,7 @@ export function RegisterForm() {
     mutationFn: register,
     onSuccess: () => {
       toast.success("Registered successfully");
-      navigate({ to: "/login" });
+      navigate({ to: "/signin" });
     },
     onError: (error) => {
       toast.error("Failed to register", {
@@ -137,5 +160,15 @@ export function RegisterForm() {
         </Button>
       </form>
     </Form>
+  );
+}
+
+export function SignUpForm() {
+  return (
+    <div>
+      <CredentialSignUp />
+      <hr className="my-4" />
+      <SocialSignUp />
+    </div>
   );
 }

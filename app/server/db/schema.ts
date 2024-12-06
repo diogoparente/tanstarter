@@ -7,7 +7,7 @@ export const user = pgTable("user", {
   // last_name: text(),
   avatar_url: text(),
   email: text().unique().notNull(),
-
+  password: text(), // Store hashed password
   created_at: timestamp().defaultNow().notNull(),
   updated_at: timestamp()
     .defaultNow()
@@ -19,8 +19,8 @@ export const user = pgTable("user", {
 export const oauthAccount = pgTable(
   "oauth_account",
   {
-    provider_id: text(),
-    provider_user_id: text(),
+    provider_id: text().notNull(),
+    provider_user_id: text().notNull(),
     user_id: integer()
       .notNull()
       .references(() => user.id),

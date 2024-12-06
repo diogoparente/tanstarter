@@ -40,6 +40,7 @@
     "@vinxi/react-server-dom": "^0.0.3",
     "@vitejs/plugin-react": "^4.3.3",
     "arctic": "^2.2.2",
+    "bcrypt": "^5.1.1",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.36.3",
@@ -61,6 +62,7 @@
     "@eslint/js": "^9.15.0",
     "@tanstack/eslint-plugin-query": "^5.60.5",
     "@tanstack/eslint-plugin-router": "^1.81.9",
+    "@types/bcrypt": "^5.0.2",
     "@types/node": "^22.5.4",
     "@types/react": "^18.2.65",
     "@types/react-dom": "^18.2.21",
@@ -83,6 +85,7 @@
   "scripts": {
     "build": "vinxi build",
     "db": "drizzle-kit",
+    "db:migrate": "tsx app/server/db/migrate.ts",
     "dev": "vinxi dev",
     "format": "prettier --write . \"!**/{routeTree.gen.ts,pnpm-lock.yaml,drizzle}\"",
     "lint": "eslint .",

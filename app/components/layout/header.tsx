@@ -33,7 +33,7 @@ const Header = () => {
             </Button>
           ) : (
             <Link
-              href="/login"
+              href="/signin"
               className="text-sm font-medium text-foreground hover:underline"
             >
               Login

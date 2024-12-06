@@ -8,10 +8,10 @@ import {
   CardDescription,
   CardContent,
 } from "~/components/ui/card";
+import { SignUpForm } from "~/views/forms/register";
 import { ROUTES } from "../routes";
-import { SignInForm } from "~/views/forms/signin";
 
-export const Route = createFileRoute(ROUTES.SIGN_IN)({
+export const Route = createFileRoute(ROUTES.SIGN_UP)({
   component: AuthPage,
   beforeLoad: async ({ context }) => {
     if (context.user) {
@@ -28,18 +28,18 @@ export default function AuthPage() {
       <div className="flex min-h-screen items-center justify-center">
         <Card className="mx-auto w-full max-w-[400px]">
           <CardHeader className="space-y-2">
-            <CardTitle className="text-center text-2xl md:text-3xl">Welcome!</CardTitle>
+            <CardTitle className="text-center text-2xl md:text-3xl">Register</CardTitle>
             <CardDescription className="text-center">
-              Enter your credentials to login
+              Enter your details to create an account
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SignInForm />
+            <SignUpForm />
             <div className="mt-6 text-center">
               <p className="flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                <span>Don't have an account yet?</span>
+                <span>Already have an account?</span>
                 <Button variant="link" asChild className="p-0">
-                  <Link href={ROUTES.SIGN_UP}>Register</Link>
+                  <Link href={ROUTES.SIGN_IN}>Login</Link>
                 </Button>
               </p>
             </div>

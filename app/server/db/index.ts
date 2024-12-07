@@ -9,7 +9,7 @@ import * as schema from "./schema";
 
 const driver = postgres(process.env.DATABASE_URL as string);
 
-let db: PostgresJsDatabase<typeof schema> | null = null;
+let db: PostgresJsDatabase<typeof schema>;
 
 if (process.env.NODE_ENV === "production") {
   db = RemoteDrizzle({ client: driver, schema });

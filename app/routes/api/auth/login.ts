@@ -18,7 +18,7 @@ export const Route = createAPIFileRoute("/api/auth/login")({
       return json({ message: "Email and password are required" }, { status: 400 });
     }
 
-    const users = await db?.select().from(userTable).where(eq(userTable.email, email));
+    const users = await db.select().from(userTable).where(eq(userTable.email, email));
     const user = users?.[0];
 
     if (!user) {

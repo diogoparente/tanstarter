@@ -1,13 +1,16 @@
-import { integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   name: text(),
-  // first_name: text(),
-  // last_name: text(),
   avatar_url: text(),
   email: text().unique().notNull(),
-  password: text(), // Store hashed password
+  // Auth fields
+  password: text(), // For email/password auth
+  provider: text(), // 'email', 'google', etc.
+  provider_user_id: text(), // OAuth provider's user ID
+  email_verified: boolean().default(false).notNull(),
+  // Timestamps
   created_at: timestamp().defaultNow().notNull(),
   updated_at: timestamp()
     .defaultNow()
@@ -15,18 +18,6 @@ export const user = pgTable("user", {
   setup_at: timestamp(),
   terms_accepted_at: timestamp(),
 });
-
-export const oauthAccount = pgTable(
-  "oauth_account",
-  {
-    provider_id: text().notNull(),
-    provider_user_id: text().notNull(),
-    user_id: integer()
-      .notNull()
-      .references(() => user.id),
-  },
-  (table) => [primaryKey({ columns: [table.provider_id, table.provider_user_id] })],
-);
 
 export const session = pgTable("session", {
   id: text().primaryKey(),

@@ -33,7 +33,7 @@ export async function createSession(token: string, userId: number): Promise<Sess
 export async function validateSessionToken(token: string) {
   const sessionId = encodeHexLowerCase(sha256(new TextEncoder().encode(token)));
   const result = await db
-    .select({
+    ?.select({
       user: {
         // Only return the necessary user data for the client
         id: userTable.id,
@@ -49,10 +49,10 @@ export async function validateSessionToken(token: string) {
     .from(sessionTable)
     .innerJoin(userTable, eq(sessionTable.user_id, userTable.id))
     .where(eq(sessionTable.id, sessionId));
-  if (result.length < 1) {
+  if (result?.length) {
     return { session: null, user: null };
   }
-  const { user, session } = result[0];
+  const { user, session } = result![0];
   if (Date.now() >= session.expires_at.getTime()) {
     await db.delete(sessionTable).where(eq(sessionTable.id, session.id));
     return { session: null, user: null };

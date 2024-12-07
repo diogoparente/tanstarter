@@ -1,7 +1,5 @@
-import { eq } from "drizzle-orm";
+import { redirect } from "@tanstack/react-router";
 import { z } from "zod";
-import { db } from "~/server/db";
-import { user as userTable } from "~/server/db/schema";
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -58,5 +56,18 @@ export async function register({ email, password, name }: RegisterInput) {
 }
 
 export async function logout() {
-  // sign out
+  const response = await fetch("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || "Failed to logout");
+  } else {
+    // Redirect to the root path after successful logout
+    return redirect({ to: "/" });
+  }
 }

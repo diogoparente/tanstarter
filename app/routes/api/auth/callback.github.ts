@@ -9,7 +9,7 @@ import {
   setSessionTokenCookie,
 } from "~/server/auth";
 import { db } from "~/server/db";
-import { oauthAccount, user } from "~/server/db/schema";
+import { user } from "~/server/db/schema";
 
 interface GitHubUser {
   id: string;
@@ -44,82 +44,101 @@ export const Route = createAPIFileRoute("/api/auth/callback/github")({
           Authorization: `Bearer ${tokens.accessToken()}`,
         },
       });
+
+      if (!githubUserResponse.ok) {
+        throw new Error("Failed to get user info");
+      }
+
       const providerUser: GitHubUser = await githubUserResponse.json();
 
-      const existingUser = await db.query.oauthAccount.findFirst({
+      if (!providerUser.email) {
+        throw new Error("Email is required");
+      }
+
+      const existingUser = await db.query.user.findFirst({
         where: and(
-          eq(oauthAccount.provider_id, PROVIDER_ID),
-          eq(oauthAccount.provider_user_id, providerUser.id),
+          eq(user.provider, PROVIDER_ID),
+          eq(user.provider_user_id, providerUser.id),
         ),
       });
 
+      let userId: number;
+
       if (existingUser) {
-        const token = generateSessionToken();
-        const session = await createSession(token, existingUser.user_id);
-        setSessionTokenCookie(token, session.expires_at);
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: "/",
-          },
-        });
+        userId = existingUser.id;
       } else {
         const existingUserEmail = await db.query.user.findFirst({
           where: eq(user.email, providerUser.email),
         });
+
         if (existingUserEmail) {
-          await db.insert(oauthAccount).values({
-            provider_id: PROVIDER_ID,
-            provider_user_id: providerUser.id,
-            user_id: existingUserEmail.id,
-          });
-          const token = generateSessionToken();
-          const session = await createSession(token, existingUserEmail.id);
-          setSessionTokenCookie(token, session.expires_at);
-          return new Response(null, {
-            status: 302,
-            headers: {
-              Location: "/",
-            },
-          });
+          // Link provider to existing account
+          const updateResult = await db
+            .update(user)
+            .set({
+              provider: PROVIDER_ID,
+              provider_user_id: providerUser.id,
+              email_verified: true,
+              updated_at: new Date(),
+            })
+            .where(eq(user.id, existingUserEmail.id))
+            .returning();
+
+          if (!updateResult?.[0]) {
+            throw new Error("Failed to link account");
+          }
+
+          userId = existingUserEmail.id;
+        } else {
+          // Create new user
+          const result = await db
+            .insert(user)
+            .values({
+              email: providerUser.email,
+              name: providerUser.name || providerUser.login,
+              avatar_url: providerUser.avatar_url,
+              provider: PROVIDER_ID,
+              provider_user_id: providerUser.id,
+              email_verified: true,
+            })
+            .returning();
+
+          if (!result?.[0]) {
+            throw new Error("Failed to create user");
+          }
+
+          userId = result[0].id;
         }
       }
 
-      const userId = await db.transaction(async (tx) => {
-        const [{ newId }] = await tx
-          .insert(user)
-          .values({
-            email: providerUser.email,
-            name: providerUser.name || providerUser.login,
-            avatar_url: providerUser.avatar_url,
-          })
-          .returning({ newId: user.id });
-        await tx.insert(oauthAccount).values({
-          provider_id: PROVIDER_ID,
-          provider_user_id: providerUser.id,
-          user_id: newId,
-        });
-        return newId;
-      });
-
+      // Create session
       const token = generateSessionToken();
       const session = await createSession(token, userId);
+
+      if (!session) {
+        throw new Error("Failed to create session");
+      }
+
+      // Set session cookie
       setSessionTokenCookie(token, session.expires_at);
+
+      const redirectUrl = "/dashboard";
       return new Response(null, {
         status: 302,
         headers: {
-          Location: "/",
+          Location: redirectUrl,
         },
       });
-    } catch (e) {
-      console.log(e);
-      if (e instanceof OAuth2RequestError) {
-        return new Response(null, {
-          status: 400,
-        });
-      }
+    } catch (error) {
+      console.error("OAuth error:", error);
+      const redirectUrl = "/signin";
+      const search =
+        error instanceof Error ? `error=${error.message}` : "error=Authentication failed";
       return new Response(null, {
-        status: 500,
+        status: 302,
+        headers: {
+          Location: `${redirectUrl}?${search}`,
+        },
       });
     }
   },

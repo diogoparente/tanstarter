@@ -1,130 +1,178 @@
 import { createAPIFileRoute } from "@tanstack/start/api";
-import { OAuth2RequestError } from "arctic";
 import { and, eq } from "drizzle-orm";
-import { parseCookies } from "vinxi/http";
+import { db } from "~/server/db";
+import { user } from "~/server/db/schema";
 import {
   createSession,
   generateSessionToken,
-  google,
   setSessionTokenCookie,
 } from "~/server/auth";
-import { db } from "~/server/db";
-import { oauthAccount, user } from "~/server/db/schema";
+
+const PROVIDER_ID = "google";
 
 interface GoogleUser {
   sub: string;
-  name: string;
-  given_name: string;
-  family_name: string;
   email: string;
+  name: string;
   picture: string;
-  email_verified: boolean;
-  locale: string;
+}
+
+interface GoogleTokenResponse {
+  access_token: string;
+  id_token: string;
+  expires_in: number;
+  token_type: string;
+  scope: string;
 }
 
 export const Route = createAPIFileRoute("/api/auth/callback/google")({
   GET: async ({ request }) => {
-    const url = new URL(request.url);
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-
-    const cookies = parseCookies();
-    const storedState = cookies.google_oauth_state;
-    const storedCodeVerifier = cookies.google_code_verifier;
-
-    if (!code || !state || !storedState || !storedCodeVerifier || state !== storedState) {
-      return new Response(null, {
-        status: 400,
-      });
-    }
-
-    const PROVIDER_ID = "google";
-
     try {
-      const tokens = await google.validateAuthorizationCode(code, storedCodeVerifier);
-      const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+      const code = new URL(request.url).searchParams.get("code");
+      if (!code) {
+        throw new Error("No code provided");
+      }
+
+      // Exchange code for tokens
+      const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
         headers: {
-          Authorization: `Bearer ${tokens.accessToken()}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          code,
+          client_id: process.env.GOOGLE_CLIENT_ID!,
+          client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+          redirect_uri: process.env.GOOGLE_REDIRECT_URI!,
+          grant_type: "authorization_code",
+        }),
+      });
+
+      if (!tokenResponse.ok) {
+        throw new Error("Failed to exchange code for tokens");
+      }
+
+      const tokens: GoogleTokenResponse = await tokenResponse.json();
+
+      // Get user info
+      const userResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
         },
       });
-      const providerUser: GoogleUser = await response.json();
 
-      const existingUser = await db.query.oauthAccount.findFirst({
+      if (!userResponse.ok) {
+        throw new Error("Failed to get user info");
+      }
+
+      const providerUser: GoogleUser = await userResponse.json();
+
+      if (!providerUser.email) {
+        throw new Error("Email is required");
+      }
+
+      // Find existing user by provider ID and sub
+      const existingUser = await db.query.user.findFirst({
         where: and(
-          eq(oauthAccount.provider_id, PROVIDER_ID),
-          eq(oauthAccount.provider_user_id, providerUser.sub),
+          eq(user.provider, PROVIDER_ID),
+          eq(user.provider_user_id, providerUser.sub),
         ),
       });
 
+      let userId: number;
+
       if (existingUser) {
-        const token = generateSessionToken();
-        const session = await createSession(token, existingUser.user_id);
-        setSessionTokenCookie(token, session.expires_at);
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: "/",
-          },
-        });
+        // Update existing user
+        const updateResult = await db
+          ?.update(user)
+          .set({
+            name: providerUser.name,
+            avatar_url: providerUser.picture,
+            email_verified: true,
+            updated_at: new Date(),
+          })
+          .where(eq(user.id, existingUser.id))
+          .returning();
+
+        if (!updateResult?.[0]) {
+          throw new Error("Failed to update user");
+        }
+
+        userId = existingUser.id;
       } else {
+        // Check for existing user with same email
         const existingUserEmail = await db.query.user.findFirst({
           where: eq(user.email, providerUser.email),
         });
+
         if (existingUserEmail) {
-          await db.insert(oauthAccount).values({
-            provider_id: PROVIDER_ID,
-            provider_user_id: providerUser.sub,
-            user_id: existingUserEmail.id,
-          });
-          const token = generateSessionToken();
-          const session = await createSession(token, existingUserEmail.id);
-          setSessionTokenCookie(token, session.expires_at);
-          return new Response(null, {
-            status: 302,
-            headers: {
-              Location: "/",
-            },
-          });
+          // Link provider to existing account
+          const updateResult = await db
+            ?.update(user)
+            .set({
+              provider: PROVIDER_ID,
+              provider_user_id: providerUser.sub,
+              email_verified: true,
+              updated_at: new Date(),
+            })
+            .where(eq(user.id, existingUserEmail.id))
+            .returning();
+
+          if (!updateResult?.[0]) {
+            throw new Error("Failed to link account");
+          }
+
+          userId = existingUserEmail.id;
+        } else {
+          // Create new user
+          const result = await db
+            ?.insert(user)
+            .values({
+              email: providerUser.email,
+              name: providerUser.name,
+              avatar_url: providerUser.picture,
+              provider: PROVIDER_ID,
+              provider_user_id: providerUser.sub,
+              email_verified: true,
+            })
+            .returning();
+
+          if (!result?.[0]) {
+            throw new Error("Failed to create user");
+          }
+
+          userId = result[0].id;
         }
       }
 
-      const userId = await db.transaction(async (tx) => {
-        const [{ newId }] = await tx
-          .insert(user)
-          .values({
-            email: providerUser.email,
-            name: providerUser.name,
-            // first_name: providerUser.given_name,
-            // last_name: providerUser.family_name,
-            avatar_url: providerUser.picture,
-          })
-          .returning({ newId: user.id });
-        await tx.insert(oauthAccount).values({
-          provider_id: PROVIDER_ID,
-          provider_user_id: providerUser.sub,
-          user_id: newId,
-        });
-        return newId;
-      });
-
+      // Create session
       const token = generateSessionToken();
       const session = await createSession(token, userId);
+
+      if (!session) {
+        throw new Error("Failed to create session");
+      }
+
+      // Set session cookie
       setSessionTokenCookie(token, session.expires_at);
+
+      const redirectUrl = "/dashboard";
       return new Response(null, {
         status: 302,
         headers: {
-          Location: "/",
+          Location: redirectUrl,
         },
       });
-    } catch (e) {
-      console.log(e);
-      if (e instanceof OAuth2RequestError) {
-        return new Response(null, {
-          status: 400,
-        });
-      }
+    } catch (error) {
+      console.error("OAuth error:", error);
+      const redirectUrl = "/signin";
+      const search =
+        error instanceof Error ? `error=${error.message}` : "error=Authentication failed";
       return new Response(null, {
-        status: 500,
+        status: 302,
+        headers: {
+          Location: `${redirectUrl}?${search}`,
+        },
       });
     }
   },

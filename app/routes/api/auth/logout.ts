@@ -1,4 +1,5 @@
 import { createAPIFileRoute } from "@tanstack/start/api";
+import { json } from "@tanstack/start";
 import { deleteCookie, setHeader } from "vinxi/http";
 import { getAuthSession, invalidateSession, SESSION_COOKIE_NAME } from "~/server/auth";
 

@@ -1,6 +1,6 @@
 import { sha256 } from "@oslojs/crypto/sha2";
 import { encodeBase32LowerCaseNoPadding, encodeHexLowerCase } from "@oslojs/encoding";
-import { Discord, GitHub, Google } from "arctic";
+import { GitHub, Google } from "arctic";
 import { eq } from "drizzle-orm";
 import { deleteCookie, getCookie, setCookie } from "vinxi/http";
 
@@ -24,22 +24,33 @@ export async function createSession(token: string, userId: number): Promise<Sess
   const session: Session = {
     id: sessionId,
     user_id: userId,
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
+    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30), // 30 days
   };
-  await db.insert(sessionTable).values(session);
-  return session;
+
+  const result = await db
+    .insert(sessionTable)
+    .values(session)
+    .returning()
+    .catch((error) => {
+      throw new Error(`Failed to create session: ${error.message}`);
+    });
+
+  if (!result?.[0]) {
+    throw new Error("Failed to create session: No result returned");
+  }
+
+  return result[0];
 }
 
 export async function validateSessionToken(token: string) {
   const sessionId = encodeHexLowerCase(sha256(new TextEncoder().encode(token)));
+
   const result = await db
     .select({
       user: {
         // Only return the necessary user data for the client
         id: userTable.id,
         name: userTable.name,
-        // first_name: userTable.first_name,
-        // last_name: userTable.last_name,
         avatar_url: userTable.avatar_url,
         email: userTable.email,
         setup_at: userTable.setup_at,
@@ -49,22 +60,15 @@ export async function validateSessionToken(token: string) {
     .from(sessionTable)
     .innerJoin(userTable, eq(sessionTable.user_id, userTable.id))
     .where(eq(sessionTable.id, sessionId));
-  if (result.length < 1) {
+
+  if (!result?.length) {
     return { session: null, user: null };
   }
+
   const { user, session } = result[0];
   if (Date.now() >= session.expires_at.getTime()) {
     await db.delete(sessionTable).where(eq(sessionTable.id, session.id));
     return { session: null, user: null };
-  }
-  if (Date.now() >= session.expires_at.getTime() - 1000 * 60 * 60 * 24 * 15) {
-    session.expires_at = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30);
-    await db
-      .update(sessionTable)
-      .set({
-        expires_at: session.expires_at,
-      })
-      .where(eq(sessionTable.id, session.id));
   }
 
   return { session, user };
@@ -88,12 +92,6 @@ export function setSessionTokenCookie(token: string, expiresAt: Date) {
   });
 }
 
-// OAuth2 Providers
-export const discord = new Discord(
-  process.env.DISCORD_CLIENT_ID as string,
-  process.env.DISCORD_CLIENT_SECRET as string,
-  process.env.DISCORD_REDIRECT_URI as string,
-);
 export const github = new GitHub(
   process.env.GITHUB_CLIENT_ID as string,
   process.env.GITHUB_CLIENT_SECRET as string,
@@ -115,12 +113,18 @@ export async function getAuthSession({ refreshCookie } = { refreshCookie: true }
     return { session: null, user: null };
   }
   const { session, user } = await validateSessionToken(token);
+
   if (session === null) {
     deleteCookie(SESSION_COOKIE_NAME);
     return { session: null, user: null };
   }
+
   if (refreshCookie) {
     setSessionTokenCookie(token, session.expires_at);
+  } else {
+    // If refreshCookie is false, delete the session from the database and the cookie
+    await invalidateSession(session.id);
+    deleteCookie(SESSION_COOKIE_NAME);
   }
   return { session, user };
 }

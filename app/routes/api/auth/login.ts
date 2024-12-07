@@ -31,8 +31,6 @@ export const Route = createAPIFileRoute("/api/auth/login")({
 
     const isValidPassword = await bcrypt.compare(password, user.password);
 
-    console.log({ isValidPassword });
-
     if (!isValidPassword) {
       return json({ message: "Invalid email or password" }, { status: 401 });
     }
